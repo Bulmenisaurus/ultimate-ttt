@@ -58,7 +58,9 @@ const updateBoard = (container: HTMLElement, game: Game) => {
     }
 };
 
-const main = () => {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const main = async () => {
     const container = document.getElementById('container')!;
     const game = new Game();
 
@@ -89,18 +91,22 @@ const main = () => {
         updateBoard(container, game);
     });
 
-    game.onMove = (move) => {
-        if (game.currentState.playerToMove === 'O') {
-            // get all legal moves and pick one at random
-            const legalMoves = game.legalMoves();
-            if (legalMoves.length > 0) {
-                const randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
-                game.doMove(randomMove);
-                updateBoard(container, game);
+    const startTime = Date.now();
+    for (let i = 0; i < 1000; i++) {
+        // simulate a full game
+        while (!game.currentState.complete) {
+            const moves = game.legalMoves();
+            if (moves.length === 0) {
+                break;
             }
+            const move = moves[Math.floor(Math.random() * moves.length)];
+            game.doMove(move);
         }
-    };
-    updateBoard(container, game);
+
+        game.reset();
+    }
+    const endTime = Date.now();
+    console.log(`Time taken: ${endTime - startTime}ms`);
 };
 
 main();

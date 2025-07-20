@@ -50,6 +50,13 @@ export interface GameState {
     complete: boolean;
 }
 
+export const initialGameState: GameState = {
+    grid: range(0, 9).map(() => Array(9).fill(null)),
+    activeSubgrid: 'any',
+    playerToMove: 'X',
+    complete: false,
+};
+
 export interface Move {
     coordinate: Coordinate;
     player: Player;
@@ -62,12 +69,11 @@ export class Game {
     currentState: GameState;
 
     constructor() {
-        this.currentState = {
-            grid: range(0, 9).map(() => Array(9).fill(null)),
-            activeSubgrid: 'any',
-            playerToMove: 'X',
-            complete: false,
-        };
+        this.currentState = structuredClone(initialGameState);
+    }
+
+    reset() {
+        this.currentState = structuredClone(initialGameState);
     }
 
     checkWinSubgrid(subgrid: Coordinate): Player | 'none' | 'draw' {
