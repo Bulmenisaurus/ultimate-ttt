@@ -24,7 +24,6 @@ const createSubgrid = (container: HTMLElement, subgridX: number, subgridY: numbe
 };
 
 const updateBoard = (container: HTMLElement, game: Game) => {
-    if ((window as any)._debug) debugger;
     // update subgrid status
     for (let x = 0; x < 3; x++) {
         for (let y = 0; y < 3; y++) {
@@ -46,7 +45,7 @@ const updateBoard = (container: HTMLElement, game: Game) => {
     }
     for (let x = 0; x < 9; x++) {
         for (let y = 0; y < 9; y++) {
-            const tile = game.currentState.grid[x][y];
+            const tile = game.getTile([x, y]);
             const smallerContainer = container.querySelector(
                 `.tile[data-x="${x}"][data-y="${y}"]`
             ) as HTMLElement;
@@ -93,6 +92,29 @@ const main = async () => {
         updateBoard(container, game);
     });
 
+    // for random play
+    // game.onMove = (move: Move) => {
+    //     if (game.currentState.complete) {
+    //         const result = game.checkWinWholeBoard();
+    //         alert(`Game over. ${result} won.`);
+    //         return;
+    //     }
+
+    //     if (game.currentState.playerToMove === 'O') {
+    //         // update player move
+    //         updateBoard(container, game);
+
+    //         const allMoves = game.legalMoves();
+    //         if (allMoves.length === 0) {
+    //             debugger;
+    //         }
+    //         console.log(allMoves);
+    //         const randomMove = allMoves[Math.floor(Math.random() * allMoves.length)];
+    //         game.doMove(randomMove);
+    //         updateBoard(container, game);
+    //     }
+    // };
+
     mctsWorker.onmessage = (event) => {
         const { bestMove, stats } = event.data;
         const winningChances = 1 - stats.n_wins / stats.n_plays;
@@ -124,7 +146,7 @@ const main = async () => {
     //     none: 0,
     //     draw: 0,
     // };
-    // for (let i = 0; i < 1000; i++) {
+    // for (let i = 0; i < 100000; i++) {
     //     // simulate a full game
     //     while (!game.currentState.complete) {
     //         const moves = game.legalMoves();

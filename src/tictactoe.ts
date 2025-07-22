@@ -48,8 +48,56 @@ const ticTacToeWin = (grid: ExtendedTile[][]): GameOutcome => {
     return 'none';
 };
 
+const setBit = (bitboard: number, x: number, y: number): number => {
+    let index = x + y * 3;
+    return bitboard | (1 << index);
+};
+
+const unsetBit = (bitboard: number, x: number, y: number): number => {
+    let index = x + y * 3;
+    return bitboard & ~(1 << index);
+};
+
+const getBit = (bitboard: number, x: number, y: number): number => {
+    let index = x + y * 3;
+    return (bitboard >> index) & 1;
+};
+
+const isBitboardWinning = (bitboard: number): boolean => {
+    return (
+        (bitboard & 0b111000000) === 0b111000000 ||
+        (bitboard & 0b000111000) === 0b000111000 ||
+        (bitboard & 0b000000111) === 0b000000111 ||
+        (bitboard & 0b100100100) === 0b100100100 ||
+        (bitboard & 0b010010010) === 0b010010010 ||
+        (bitboard & 0b001001001) === 0b001001001 ||
+        (bitboard & 0b100010001) === 0b100010001 ||
+        (bitboard & 0b001010100) === 0b001010100
+    );
+};
+
+const bitboardGridResult = (xBitboard: number, yBitboard: number): GameOutcome => {
+    const xWin = isBitboardWinning(xBitboard);
+    const yWin = isBitboardWinning(yBitboard);
+
+    if (xWin) {
+        return 'X';
+    }
+    if (yWin) {
+        return 'O';
+    }
+
+    // if all cells filled, it's a draw
+    if ((xBitboard | yBitboard) === 0b111111111) {
+        return 'draw';
+    }
+
+    return 'none';
+};
+
 export interface GameState {
-    grid: Tile[][];
+    aSubgridBitboard: number[];
+    bSubgridBitboard: number[];
     // Subgrid to place in, can be any after filled it
     activeSubgrid: Coordinate | 'any';
     playerToMove: Player;
@@ -60,7 +108,12 @@ export interface GameState {
 }
 
 export const initialGameState: GameState = {
-    grid: range(0, 9).map(() => Array(9).fill(null)),
+    // note subgrid bitboard are stored by columns
+    // |x  |
+    // | x | -> 0b 100 010 00 1
+    // |  x|
+    aSubgridBitboard: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    bSubgridBitboard: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     activeSubgrid: 'any',
     playerToMove: 'X',
     complete: false,
@@ -91,21 +144,46 @@ export class Game {
     }
 
     checkWinSubgrid(subgrid: Coordinate): GameOutcome {
-        const subgridTiles = range(subgrid[0] * 3, subgrid[0] * 3 + 3).map((x) =>
-            range(subgrid[1] * 3, subgrid[1] * 3 + 3).map((y) => {
-                const tile = this.currentState.grid[x][y];
-                return tile === null ? 'none' : tile;
-            })
-        );
-
-        return ticTacToeWin(subgridTiles);
+        const idx = subgrid[0] + subgrid[1] * 3;
+        const xBitboard = this.currentState.aSubgridBitboard[idx];
+        const yBitboard = this.currentState.bSubgridBitboard[idx];
+        return bitboardGridResult(xBitboard, yBitboard);
     }
 
     checkWinWholeBoard(): GameOutcome {
-        const gridTiles = range(0, 3).map((x) =>
-            range(0, 3).map((y) => this.checkWinSubgrid([x, y]))
-        );
-        return ticTacToeWin(gridTiles);
+        let xWinsBitboard = 0;
+        let yWinsBitboard = 0;
+        let neutralBitboard = 0;
+        for (let x = 0; x < 3; x++) {
+            for (let y = 0; y < 3; y++) {
+                const subgridResult = this.checkWinSubgrid([x, y]);
+                if (subgridResult === 'X') {
+                    xWinsBitboard = setBit(xWinsBitboard, x, y);
+                } else if (subgridResult === 'O') {
+                    yWinsBitboard = setBit(yWinsBitboard, x, y);
+                } else if (subgridResult === 'draw') {
+                    neutralBitboard = setBit(neutralBitboard, x, y);
+                }
+            }
+        }
+
+        // check if a player already won
+        const playerResult = bitboardGridResult(xWinsBitboard, yWinsBitboard);
+        if (isPlayer(playerResult)) {
+            return playerResult;
+        }
+
+        // otherwise, either all the subgrids are occupied with a winner
+        // (which the bitboardGridResult accounts, returning 'draw')
+        // or there is neutral territory, which this function checks for
+        if (
+            playerResult === 'draw' ||
+            (xWinsBitboard | yWinsBitboard | neutralBitboard) === 0b111111111
+        ) {
+            return 'draw';
+        }
+
+        return 'none';
     }
 
     /**
@@ -114,31 +192,39 @@ export class Game {
      */
     doMove(move: Move) {
         const { coordinate, player } = move;
-        const { grid, activeSubgrid, playerToMove } = this.currentState;
-
-        if (grid[coordinate[0]][coordinate[1]] !== null) {
-            throw new Error('Tile already taken');
-        }
+        const { aSubgridBitboard, bSubgridBitboard, activeSubgrid } = this.currentState;
 
         // check if the move is in the active subgrid
         const subgridX = Math.floor(coordinate[0] / 3);
         const subgridY = Math.floor(coordinate[1] / 3);
-        if (
-            activeSubgrid !== 'any' &&
-            (activeSubgrid[0] !== subgridX || activeSubgrid[1] !== subgridY)
-        ) {
+
+        // update the active subgrid to match the coordinate of the move
+        // calculate the coordinates within the subgrid
+        const offsetX = move.coordinate[0] % 3;
+        const offsetY = move.coordinate[1] % 3;
+
+        const idx = subgridX + subgridY * 3;
+        const xBitboard = aSubgridBitboard[idx];
+        const yBitboard = bSubgridBitboard[idx];
+
+        const tile = this.getTile(coordinate);
+        if (tile !== null) {
+            debugger;
+            throw new Error(`Tile already taken by ${tile}`);
+        }
+
+        if (activeSubgrid !== 'any' && !coordinatesEqual(activeSubgrid, [subgridX, subgridY])) {
             throw new Error('Move is not in the active subgrid');
         }
 
         this.currentState.moves.push(move);
 
         // update the game state
-        grid[coordinate[0]][coordinate[1]] = player;
-
-        // update the active subgrid to match the coordinate of the move
-        // calculate the coordinates within the subgrid
-        const offsetX = move.coordinate[0] % 3;
-        const offsetY = move.coordinate[1] % 3;
+        if (player === 'X') {
+            this.currentState.aSubgridBitboard[idx] = setBit(xBitboard, offsetX, offsetY);
+        } else {
+            this.currentState.bSubgridBitboard[idx] = setBit(yBitboard, offsetX, offsetY);
+        }
 
         this.currentState.activeSubgrid = [offsetX, offsetY];
 
@@ -162,8 +248,19 @@ export class Game {
         const { coordinate, player } = move;
         this.currentState.moves.pop();
         // remove the placed tile
-        this.currentState.grid[coordinate[0]][coordinate[1]] = null;
+        const subgridX = Math.floor(coordinate[0] / 3);
+        const subgridY = Math.floor(coordinate[1] / 3);
+        const offsetX = coordinate[0] % 3;
+        const offsetY = coordinate[1] % 3;
+        const idx = subgridX + subgridY * 3;
+        const xBitboard = this.currentState.aSubgridBitboard[idx];
+        const yBitboard = this.currentState.bSubgridBitboard[idx];
 
+        if (player === 'X') {
+            this.currentState.aSubgridBitboard[idx] = unsetBit(xBitboard, offsetX, offsetY);
+        } else {
+            this.currentState.bSubgridBitboard[idx] = unsetBit(yBitboard, offsetX, offsetY);
+        }
         // set the current active subgrid to the previous one
         this.currentState.activeSubgrid = move.currentSubgrid;
 
@@ -179,7 +276,7 @@ export class Game {
             return [];
         }
 
-        const { grid, activeSubgrid, playerToMove } = this.currentState;
+        const { activeSubgrid } = this.currentState;
 
         const legalMoves: Move[] = [];
         for (let x = 0; x < 3; x++) {
@@ -197,21 +294,41 @@ export class Game {
         return legalMoves;
     }
 
+    getTile(coordinate: Coordinate): Tile {
+        const { aSubgridBitboard, bSubgridBitboard } = this.currentState;
+        const subgridX = Math.floor(coordinate[0] / 3);
+        const subgridY = Math.floor(coordinate[1] / 3);
+
+        const idx = subgridX + subgridY * 3;
+        const xBitboard = aSubgridBitboard[idx];
+        const yBitboard = bSubgridBitboard[idx];
+
+        const x = coordinate[0] % 3;
+        const y = coordinate[1] % 3;
+        if (getBit(xBitboard, x, y)) {
+            return 'X';
+        }
+        if (getBit(yBitboard, x, y)) {
+            return 'O';
+        }
+        return null;
+    }
+
     legalMovesSubgrid(subgrid: Coordinate): Move[] {
-        const { grid, activeSubgrid, playerToMove } = this.currentState;
+        const { aSubgridBitboard, bSubgridBitboard } = this.currentState;
+        const idx = subgrid[0] + subgrid[1] * 3;
+        const xBitboard = aSubgridBitboard[idx];
+        const yBitboard = bSubgridBitboard[idx];
 
         const legalMoves: Move[] = [];
         for (let offsetX = 0; offsetX < 3; offsetX++) {
             for (let offsetY = 0; offsetY < 3; offsetY++) {
-                const x = subgrid[0] * 3 + offsetX;
-                const y = subgrid[1] * 3 + offsetY;
-
-                if (grid[x][y] !== null) {
+                if (getBit(xBitboard, offsetX, offsetY) || getBit(yBitboard, offsetX, offsetY)) {
                     continue;
                 }
                 legalMoves.push({
-                    coordinate: [x, y],
-                    player: playerToMove,
+                    coordinate: [subgrid[0] * 3 + offsetX, subgrid[1] * 3 + offsetY],
+                    player: this.currentState.playerToMove,
                     currentSubgrid: subgrid,
                 });
             }
