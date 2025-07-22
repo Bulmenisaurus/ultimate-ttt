@@ -3,38 +3,44 @@ import { range } from './util';
 export type Player = 'X' | 'O';
 export type Tile = Player | null;
 export type GameOutcome = Player | 'none' | 'draw';
+type ExtendedTile = GameOutcome;
 export type Coordinate = [number, number];
 
-const otherPlayer = (player: Player): Player => (player === 'X' ? 'O' : 'X');
+export const otherPlayer = (player: Player): Player => (player === 'X' ? 'O' : 'X');
 
 export const coordinatesEqual = (a: Coordinate, b: Coordinate): boolean =>
     a[0] === b[0] && a[1] === b[1];
 
-const ticTacToeWin = (grid: Tile[][]): GameOutcome => {
+const isPlayer = (tile: ExtendedTile): tile is Player => tile === 'X' || tile === 'O';
+
+// Checks the win given a 3x3 set of tiles
+// Each tile can either belong to one of the players, be empty, or be a draw (!)
+// The last case is only used for the larger grid where it is useful to distinguish incomplete and drawn subgrids
+const ticTacToeWin = (grid: ExtendedTile[][]): GameOutcome => {
     // Check rows
     for (let i = 0; i < 3; i++) {
-        if (grid[i][0] && grid[i][0] === grid[i][1] && grid[i][1] === grid[i][2]) {
+        if (isPlayer(grid[i][0]) && grid[i][0] === grid[i][1] && grid[i][1] === grid[i][2]) {
             return grid[i][0]!;
         }
     }
 
     // Check columns
     for (let j = 0; j < 3; j++) {
-        if (grid[0][j] && grid[0][j] === grid[1][j] && grid[1][j] === grid[2][j]) {
+        if (isPlayer(grid[0][j]) && grid[0][j] === grid[1][j] && grid[1][j] === grid[2][j]) {
             return grid[0][j]!;
         }
     }
 
     // Check diagonals
-    if (grid[0][0] && grid[0][0] === grid[1][1] && grid[1][1] === grid[2][2]) {
+    if (isPlayer(grid[0][0]) && grid[0][0] === grid[1][1] && grid[1][1] === grid[2][2]) {
         return grid[0][0];
     }
-    if (grid[0][2] && grid[0][2] === grid[1][1] && grid[1][1] === grid[2][0]) {
+    if (isPlayer(grid[0][2]) && grid[0][2] === grid[1][1] && grid[1][1] === grid[2][0]) {
         return grid[0][2];
     }
 
     // Check for draw (all cells filled)
-    const isDraw = grid.every((row) => row.every((cell) => cell !== null));
+    const isDraw = grid.every((row) => row.every((cell) => cell !== 'none'));
     if (isDraw) {
         return 'draw';
     }
@@ -48,6 +54,9 @@ export interface GameState {
     activeSubgrid: Coordinate | 'any';
     playerToMove: Player;
     complete: boolean;
+
+    // list of moves so far, needed for mcts
+    moves: Move[];
 }
 
 export const initialGameState: GameState = {
@@ -55,6 +64,7 @@ export const initialGameState: GameState = {
     activeSubgrid: 'any',
     playerToMove: 'X',
     complete: false,
+    moves: [],
 };
 
 export interface Move {
@@ -68,32 +78,32 @@ export interface Move {
 export class Game {
     currentState: GameState;
 
-    constructor() {
-        this.currentState = structuredClone(initialGameState);
+    constructor(state?: GameState) {
+        this.currentState = state || structuredClone(initialGameState);
     }
 
     reset() {
         this.currentState = structuredClone(initialGameState);
     }
 
-    checkWinSubgrid(subgrid: Coordinate): Player | 'none' | 'draw' {
+    copy(): Game {
+        return new Game(structuredClone(this.currentState));
+    }
+
+    checkWinSubgrid(subgrid: Coordinate): GameOutcome {
         const subgridTiles = range(subgrid[0] * 3, subgrid[0] * 3 + 3).map((x) =>
-            range(subgrid[1] * 3, subgrid[1] * 3 + 3).map((y) => this.currentState.grid[x][y])
+            range(subgrid[1] * 3, subgrid[1] * 3 + 3).map((y) => {
+                const tile = this.currentState.grid[x][y];
+                return tile === null ? 'none' : tile;
+            })
         );
 
         return ticTacToeWin(subgridTiles);
     }
 
-    checkWinWholeBoard(): Player | 'none' | 'draw' {
+    checkWinWholeBoard(): GameOutcome {
         const gridTiles = range(0, 3).map((x) =>
-            range(0, 3).map((y) => {
-                const subgridOutcome = this.checkWinSubgrid([x, y]);
-                // convert the game outcome to a tile
-                if (subgridOutcome === 'none' || subgridOutcome === 'draw') {
-                    return null;
-                }
-                return subgridOutcome;
-            })
+            range(0, 3).map((y) => this.checkWinSubgrid([x, y]))
         );
         return ticTacToeWin(gridTiles);
     }
@@ -119,6 +129,8 @@ export class Game {
         ) {
             throw new Error('Move is not in the active subgrid');
         }
+
+        this.currentState.moves.push(move);
 
         // update the game state
         grid[coordinate[0]][coordinate[1]] = player;
@@ -148,6 +160,7 @@ export class Game {
 
     undoMove(move: Move) {
         const { coordinate, player } = move;
+        this.currentState.moves.pop();
         // remove the placed tile
         this.currentState.grid[coordinate[0]][coordinate[1]] = null;
 
@@ -205,6 +218,10 @@ export class Game {
         }
 
         return legalMoves;
+    }
+
+    hash() {
+        return this.currentState.moves.map((move) => move.coordinate.join(move.player)).join(' ');
     }
 
     onMove(move: Move) {

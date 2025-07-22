@@ -1,4 +1,5 @@
-import { coordinatesEqual, Game, Move } from './tictactoe';
+import { MonteCarlo } from './mcts';
+import { coordinatesEqual, Game, GameOutcome, Move } from './tictactoe';
 
 const createSubgrid = (container: HTMLElement, subgridX: number, subgridY: number): HTMLElement => {
     const subgrid = document.createElement('div');
@@ -64,6 +65,7 @@ const main = async () => {
     const container = document.getElementById('container')!;
     const game = new Game();
 
+    const mctsWorker = new Worker('dist/mcts.worker.js');
     // first, create a 3x3 grid of bigger containers
     for (let y = 0; y < 3; y++) {
         for (let x = 0; x < 3; x++) {
@@ -91,22 +93,56 @@ const main = async () => {
         updateBoard(container, game);
     });
 
-    const startTime = Date.now();
-    for (let i = 0; i < 1000; i++) {
-        // simulate a full game
-        while (!game.currentState.complete) {
-            const moves = game.legalMoves();
-            if (moves.length === 0) {
-                break;
-            }
-            const move = moves[Math.floor(Math.random() * moves.length)];
-            game.doMove(move);
+    mctsWorker.onmessage = (event) => {
+        const { bestMove, stats } = event.data;
+        const winningChances = 1 - stats.n_wins / stats.n_plays;
+        console.log('Current states: winning chances at', winningChances.toFixed(2));
+        game.doMove(bestMove);
+        updateBoard(container, game);
+    };
+
+    game.onMove = (move: Move) => {
+        if (game.currentState.complete) {
+            const result = game.checkWinWholeBoard();
+            alert(`Game over. ${result} won.`);
+            return;
         }
 
-        game.reset();
-    }
-    const endTime = Date.now();
-    console.log(`Time taken: ${endTime - startTime}ms`);
+        if (game.currentState.playerToMove === 'O') {
+            // Send the move to the worker
+            mctsWorker.postMessage({ type: 'playerMove', payload: { move } });
+            // Ask the worker for the AI move
+            mctsWorker.postMessage({ type: 'getAIMove' });
+        }
+    };
+
+    // BENCHMARKING;
+    // const startTime = Date.now();
+    // const statistics: Record<GameOutcome, number> = {
+    //     X: 0,
+    //     O: 0,
+    //     none: 0,
+    //     draw: 0,
+    // };
+    // for (let i = 0; i < 1000; i++) {
+    //     // simulate a full game
+    //     while (!game.currentState.complete) {
+    //         const moves = game.legalMoves();
+    //         if (moves.length === 0) {
+    //             break;
+    //         }
+    //         const move = moves[Math.floor(Math.random() * moves.length)];
+    //         game.doMove(move);
+    //     }
+    //     const outcome = game.checkWinWholeBoard();
+
+    //     statistics[outcome]++;
+
+    //     game.reset();
+    // }
+    // const endTime = Date.now();
+    // console.log(`Time taken: ${endTime - startTime}ms`);
+    // console.log(statistics);
 };
 
 main();
