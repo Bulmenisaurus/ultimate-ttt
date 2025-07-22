@@ -9,9 +9,9 @@ self.onmessage = function (e) {
     if (type === 'playerMove') {
         game.doMove(payload.move);
     } else if (type === 'getAIMove') {
-        mcts.runSearch(game, 10);
+        console.log('getAIMove');
+        mcts.runSearch(game, 0.2);
         const bestMove = mcts.bestPlay(game);
-        console.log('test');
 
         const stats = mcts.getStats(game);
         // Apply the AI move to the internal game state

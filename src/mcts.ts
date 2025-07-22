@@ -103,6 +103,7 @@ export class MonteCarlo {
     /** From given state, repeatedly run MCTS to build statistics. */
     runSearch(state: Game, timeout = 3) {
         this.makeNode(state);
+        let i = 0;
         let end = Date.now() + timeout * 1000;
 
         while (Date.now() < end) {
@@ -113,7 +114,9 @@ export class MonteCarlo {
                 winner = this.simulate(node);
             }
             this.backpropagate(node, winner);
+            i++;
         }
+        console.log('runSearch', i);
     }
 
     /** If given state does not exist, create dangling node. */
@@ -129,15 +132,19 @@ export class MonteCarlo {
     bestPlay(state: Game) {
         this.makeNode(state);
         // If not all children are expanded, not enough information
-        if (!this.nodes.get(state.hash())!.isFullyExpanded()) {
-            throw new Error('Not enough information!');
-        }
+        // if (!this.nodes.get(state.hash())!.isFullyExpanded()) {
+        //     throw new Error('Not enough information!');
+        // }
         let node = this.nodes.get(state.hash())!;
         let allPlays = node.allPlays();
         let bestPlay;
         let max = -Infinity;
         for (let play of allPlays) {
             let childNode = node.childNode(play);
+            // skip unexpanded nodes (probably would've been caught by the condition above)
+            if (childNode.n_plays === 0) {
+                continue;
+            }
             if (childNode.n_plays > max) {
                 bestPlay = play;
                 max = childNode.n_plays;
