@@ -100,11 +100,11 @@ export class MonteCarlo {
         this.UCB1ExploreParam = UCB1ExploreParam;
         this.nodes = new Map(); // map: State.hash() => MonteCarloNode
     }
-    /** From given state, repeatedly run MCTS to build statistics. */
-    runSearch(state: Game, timeout = 3) {
+    /** From given state, repeatedly run MCTS to build statistics. Timeout in ms. */
+    runSearch(state: Game, timeout = 3000) {
         this.makeNode(state);
         let i = 0;
-        let end = Date.now() + timeout * 1000;
+        let end = Date.now() + timeout;
 
         while (Date.now() < end) {
             let node = this.select(state);

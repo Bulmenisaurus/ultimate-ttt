@@ -123,8 +123,6 @@ const main = async () => {
         updateBoard(container, game);
     };
 
-    mctsWorker.postMessage({ type: 'getAIMove' });
-
     game.onMove = (move: Move) => {
         if (game.currentState.complete) {
             const result = game.checkWinWholeBoard();
@@ -132,9 +130,9 @@ const main = async () => {
             return;
         }
 
-        if (game.currentState.playerToMove === 'O' || true) {
+        if (game.currentState.playerToMove === 'O') {
             // Send the move to the worker
-            // mctsWorker.postMessage({ type: 'playerMove', payload: { move } });
+            mctsWorker.postMessage({ type: 'playerMove', payload: { move } });
             // Ask the worker for the AI move
             mctsWorker.postMessage({ type: 'getAIMove' });
         }
